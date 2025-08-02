@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>Welcome, {{ session.get('username', 'User') }}!</h2>
+<section>
+    <h3>Your Skill Gap Report</h3>
+    {% if skill_gap %}
+        <ul>
+        {% for skill in skill_gap %}
+            <li>{{ skill }}</li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>No skill gap detected or resume not uploaded yet.</p>
+    {% endif %}
+</section>
+<section>
+    <h3>Recommended Courses</h3>
+    {% if course_recs %}
+        <ul>
+        {% for course in course_recs %}
+            <li><a href="{{ course['url'] }}" target="_blank">{{ course['title'] }}</a></li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>No recommendations yet. Upload your resume!</p>
+    {% endif %}
+</section>
+<section>
+    <h3>Job Matches</h3>
+    {% if job_matches %}
+    <table class="job-table">
+        <thead>
+            <tr>
+                <th>Job Title</th>
+                <th>Score</th>
+                <th>Feedback</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for job in job_matches %}
+            {% set idx = loop.index0 %}
+            <tr>
+                <td>{{ job.title }}</td>
+                <td>{{ job.score }}%</td>
+                <td>{{ job.feedback }}</td>
+                <td>
+                    {% if idx in applied_jobs %}
+                        <span style="color: green;">✔ Applied</span>
+                    {% else %}
+                        <span style="color: gray;">Not applied</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if idx not in applied_jobs %}
+                    <form method="POST" action="{{ url_for('apply_for_job', job_id=idx) }}" target="_blank" style="display:inline;">
+                        <button type="submit" class="apply-button">Apply</button>
+                    </form>
+                    {% else %}
+                    <a href="{{ job.apply_url }}" target="_blank" class="apply-button">View Job</a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p>No matched jobs available.</p>
+    {% endif %}
+</section>
+
+
+<section>
+    <h3>Progress</h3>
+    {% if progress_chart %}
+        <img src="data:image/png;base64,{{ progress_chart }}" />
+    {% endif %}
+</section>
+{% endblock %}
+<style>
+    .job-table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    .job-table th, .job-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    .job-table th { background: #f7f7f7; }
+    </style>
+    

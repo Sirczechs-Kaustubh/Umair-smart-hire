@@ -1,0 +1,55 @@
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    background: #f7f7f9;
+    color: #222;
+}
+header {
+    background: #14415e;
+    color: #fff;
+    padding: 1em 2em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+header h1 { margin: 0; }
+nav a {
+    color: #fff;
+    margin-left: 1.5em;
+    text-decoration: none;
+    font-weight: 500;
+}
+nav a:hover {
+    text-decoration: underline;
+}
+main {
+    max-width: 800px;
+    margin: 2em auto;
+    background: #fff;
+    border-radius: 10px;
+    padding: 2em;
+    box-shadow: 0 2px 12px rgba(44, 62, 80, 0.07);
+}
+footer {
+    text-align: center;
+    padding: 1em 0;
+    background: #e8e8ee;
+    color: #555;
+    margin-top: 2em;
+}
+h2, h3 { color: #14415e; }
+form label { display: block; margin-top: 1em; }
+form input, form textarea, form select {
+    width: 100%; padding: 0.7em; margin-top: 0.4em; border: 1px solid #aaa; border-radius: 5px;
+}
+button {
+    background: #14415e; color: #fff; border: none; padding: 0.8em 2em;
+    margin-top: 1.5em; border-radius: 6px; font-size: 1em; cursor: pointer;
+    transition: background 0.15s;
+}
+button:hover { background: #1e5882; }
+.flashes { list-style: none; padding: 0; }
+.flashes li { padding: 0.6em 1em; border-radius: 5px; margin-bottom: 0.6em; }
+.flash-success { background: #e4f9e1; color: #155724; }
+.flash-danger { background: #f8d7da; color: #721c24; }
+.flash-info { background: #d1ecf1; color: #0c5460; }

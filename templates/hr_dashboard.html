@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container">
+    <h2>HR Dashboard</h2>
+    
+    <section class="card">
+        <h3>Post a New Job</h3>
+        <form method="post" action="{{ url_for('post_job') }}">
+            <div class="form-group">
+                <label for="title">Title:</label>
+                <input type="text" id="title" name="title" required>
+            </div>
+            <div class="form-group">
+                <label for="description">Description:</label>
+                <textarea id="description" name="description" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="skills">Skills (comma-separated):</label>
+                <input type="text" id="skills" name="skills" required>
+            </div>
+            <div class="form-group">
+                <label for="deadline">Deadline:</label>
+                <input type="date" id="deadline" name="deadline" required>
+            </div>
+            
+            <!-- === THIS IS THE NEW FIELD YOU NEED TO ADD === -->
+            <div class="form-group">
+                <label for="apply_url">Application URL:</label>
+                <input type="url" id="apply_url" name="apply_url" placeholder="https://example.com/apply/job-title" required>
+            </div>
+            <!-- === END OF NEW FIELD === -->
+
+            <button type="submit" class="btn">Post Job</button>
+        </form>
+    </section>
+    
+    <section class="card">
+        <h3>Screen Candidates</h3>
+        {% if jobs %}
+            <ul class="job-list">
+            {% for job in jobs %}
+                <li>
+                    <span>{{ job['title'] }}</span>
+                    <a href="{{ url_for('screen_candidates', job_id=job['id']) }}" class="btn-secondary">View Applicants</a>
+                </li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p>No jobs posted yet.</p>
+        {% endif %}
+    </section>
+    
+    <section class="card">
+        <h3>Resume-JD Match Analytics</h3>
+        {% if match_chart %}
+            <img src="data:image/png;base64,{{ match_chart }}" alt="Match Analytics Chart" style="max-width: 100%; height: auto;" />
+        {% else %}
+            <p>No analytics to display.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
