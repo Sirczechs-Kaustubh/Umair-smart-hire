@@ -1,18 +1,42 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2>Register</h2>
-<form method="post">
-    <label>Username:</label>
-    <input type="text" name="username" required>
-    <label>Password:</label>
-    <input type="password" name="password" required>
-    <label>Role:</label>
-    <select name="role">
-        <option value="User">User</option>
-        <option value="HR">HR</option>
-        <option value="Admin">Admin</option>
-    </select>
-    <button type="submit">Register</button>
-</form>
-<p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
+<section class="auth-wrap">
+  <div class="auth-card">
+    <h2 class="auth-title">Create your account</h2>
+    <p class="auth-sub">Join SmartHire in seconds</p>
+    <form method="post" class="form">
+      <div class="form-row">
+        <label for="username">Username</label>
+        <input id="username" type="text" name="username" autocomplete="username" required />
+      </div>
+      <div class="form-row">
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" autocomplete="new-password" required />
+      </div>
+      <fieldset class="form-row">
+        <legend>Register as</legend>
+        <div class="radio-row">
+          <label class="radio">
+            <input type="radio" name="role" value="User" checked />
+            <span>User (Job Seeker)</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="role" value="HR" />
+            <span>HR (Recruiter)</span>
+          </label>
+        </div>
+      </fieldset>
+      <button type="submit" class="btn btn-primary w-full">Create account</button>
+      <p class="muted">Already have an account? <a class="link" href="{{ url_for('auth.login') }}">Login</a></p>
+    </form>
+  </div>
+  <div class="auth-side glassy">
+    <h3>What you’ll get</h3>
+    <ul class="ticks">
+      <li>AI resume parsing</li>
+      <li>Smart matching & insights</li>
+      <li>Skill-gap courses</li>
+    </ul>
+  </div>
+</section>
 {% endblock %}

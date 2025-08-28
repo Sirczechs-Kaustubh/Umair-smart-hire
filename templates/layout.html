@@ -1,42 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <title>SmartHire</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <meta charset="UTF-8" />
+  <title>SmartHire</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
+
 <body>
-    <header>
-        <h1>SmartHire</h1>
-        <nav>
-            {% if session.get('role') == 'HR' %}
-                <a href="{{ url_for('hr_dashboard') }}">HR Dashboard</a>
-                <a href="{{ url_for('post_job') }}">Post Job</a>
-                <a href="{{ url_for('logout') }}">Logout</a>
-            {% elif session.get('role') == 'User' %}
-                <a href="{{ url_for('user_dashboard') }}">User Dashboard</a>
-                <a href="{{ url_for('upload_resume') }}">Upload Resume</a>
-                <a href="{{ url_for('logout') }}">Logout</a>
-            {% else %}
-                <a href="{{ url_for('auth.login') }}">Login</a>
-                <a href="{{ url_for('auth.register') }}">Register</a>
-            {% endif %}
-        </nav>
-    </header>
-    <main>
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            <ul class="flashes">
-            {% for category, message in messages %}
-              <li class="flash-{{ category }}">{{ message }}</li>
-            {% endfor %}
-            </ul>
-          {% endif %}
-        {% endwith %}
-        {% block content %}{% endblock %}
-    </main>
-    <footer>
-        <p>&copy; {{ 2025 }} SmartHire. All rights reserved. A Umair Yojo Creation</p>
-    </footer>
+  <div class="bg-gradient"></div>
+
+  <header class="site-header">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="brand-mark">AI</span><span class="brand-name"> SmartHire</span>
+    </a>
+    <nav class="site-nav">
+      {% set is_public = current_endpoint in ('index', 'auth.login', 'auth.register') %}
+
+      {% if is_public %}
+      <!-- Landing / Login / Register: show ONLY these three -->
+      <a class="nav-link" href="{{ url_for('index') }}#about">About</a>
+      <a class="btn btn-outline" href="{{ url_for('auth.login') }}">Sign In</a>
+      <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Get Started</a>
+
+      {% elif session.get('role') == 'HR' %}
+      <!-- HR pages -->
+      <a class="nav-link" href="{{ url_for('hr_home') }}">HR Home</a>
+      <a class="nav-link" href="{{ url_for('hr_dashboard') }}">HR Dashboard</a>
+      <a class="btn btn-outline" href="{{ url_for('post_job') }}">Post Job</a>
+      <a class="btn btn-ghost" href="{{ url_for('logout') }}">Logout</a>
+
+      {% elif session.get('role') == 'User' %}
+      <a class="nav-link" href="{{ url_for('user_home') }}">Home</a>
+      <a class="nav-link" href="{{ url_for('user_profile') }}">Profile</a>
+      <a class="nav-link" href="{{ url_for('user_dashboard') }}">User Dashboard</a>
+      <a class="nav-link" href="{{ url_for('user_notifications') }}">
+        Notifications{% if user_unread_notifs and user_unread_notifs>0 %} <span class="badge">{{ user_unread_notifs
+          }}</span>{% endif %}
+      </a>
+      <a class="btn btn-ghost" href="{{ url_for('logout') }}">Logout</a>
+
+      {% else %}
+      <!-- Fallback -->
+      <a class="nav-link" href="{{ url_for('index') }}#about">About</a>
+      <a class="btn btn-outline" href="{{ url_for('auth.login') }}">Sign In</a>
+      <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Get Started</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <ul class="flashes">
+      {% for category, message in messages %}
+      <li class="flash flash-{{ category }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>© 2025 SmartHire • AI-Powered Resume Screening</p>
+  </footer>
 </body>
+
 </html>

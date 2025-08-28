@@ -46,10 +46,12 @@ def login():
             session['role'] = user.role
             flash(f"Welcome back, {user.username}!", 'success')
             
+            # in auth_bp.py, inside login()
             if user.role == 'HR':
-                return redirect(url_for('hr_dashboard'))
+                return redirect(url_for('hr_home'))
             else:
                 return redirect(url_for('user_dashboard'))
+
         else:
             flash('Invalid username or password. Please try again.', 'danger')
             return render_template('login.html')
@@ -63,6 +65,8 @@ def register():
         username = request.form.get('username')
         password = request.form.get('password')
         role = request.form.get('role', 'User')
+        if role not in ('User', 'HR'):
+            role = 'User'
 
         if not username or not password:
             flash('Username and password are required.', 'danger')

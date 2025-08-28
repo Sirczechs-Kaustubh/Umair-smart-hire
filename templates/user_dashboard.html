@@ -1,86 +1,156 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2>Welcome, {{ session.get('username', 'User') }}!</h2>
-<section>
-    <h3>Your Skill Gap Report</h3>
-    {% if skill_gap %}
-        <ul>
-        {% for skill in skill_gap %}
-            <li>{{ skill }}</li>
-        {% endfor %}
-        </ul>
+<div class="container">
+  <h2>Welcome, {{ session.get('username','User') }}!</h2>
+
+  <!-- Jobs available -->
+  <section class="card">
+    <h3>Jobs Available</h3>
+    {% if all_jobs and all_jobs|length > 0 %}
+      <div class="table-wrap">
+        <table class="job-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Title</th>
+              <th>Skills</th>
+              <th>Deadline</th>
+              <th>Apply</th>
+              <th>View</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in all_jobs %}
+            {% set jid = job.id %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ job.title }}</td>
+              <td>{{ job.skills }}</td>
+              <td>{{ job.deadline }}</td>
+              <td>
+                {% if jid in applied_jobs %}
+                  <span class="muted">Applied</span>
+                {% else %}
+                  <form method="POST" action="{{ url_for('apply_for_job', job_id=jid) }}" target="_blank" style="display:inline;">
+                    <button type="submit" class="btn">Apply</button>
+                  </form>
+                {% endif %}
+              </td>
+              <td><a class="link" href="{{ url_for('job_view', job_id=jid) }}" target="_blank">View Job</a></td>
+              <td>{% if jid in applied_jobs %}<span class="pill read">Applied</span>{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% else %}
-        <p>No skill gap detected or resume not uploaded yet.</p>
+      <p>No jobs available.</p>
     {% endif %}
-</section>
-<section>
-    <h3>Recommended Courses</h3>
-    {% if course_recs %}
-        <ul>
-        {% for course in course_recs %}
-            <li><a href="{{ course['url'] }}" target="_blank">{{ course['title'] }}</a></li>
-        {% endfor %}
-        </ul>
-    {% else %}
-        <p>No recommendations yet. Upload your resume!</p>
-    {% endif %}
-</section>
-<section>
+  </section>
+
+  <!-- Upload resume -->
+  <section class="card">
+    <h3>Upload / Update Resume</h3>
+    <form method="post" action="{{ url_for('upload_resume') }}" enctype="multipart/form-data" class="form-row" style="display:flex; gap:8px; align-items:center;">
+      <input type="file" name="resume_file" accept=".pdf,.doc,.docx,.txt" required>
+      <button type="submit" class="btn btn-primary">Upload & Parse</button>
+      <span class="muted">We’ll recompute matches automatically.</span>
+    </form>
+  </section>
+
+  <!-- Job matches -->
+  <section class="card">
     <h3>Job Matches</h3>
-    {% if job_matches %}
-    <table class="job-table">
-        <thead>
+    {% if job_matches and job_matches|length > 0 %}
+      <div class="table-wrap">
+        <table class="job-table">
+          <thead>
             <tr>
-                <th>Job Title</th>
-                <th>Score</th>
-                <th>Feedback</th>
-                <th>Status</th>
-                <th>Action</th>
+              <th>#</th>
+              <th>Job Title</th>
+              <th>Score</th>
+              <th>Feedback</th>
+              <th>Action</th>
             </tr>
-        </thead>
-        <tbody>
-        {% for job in job_matches %}
-            {% set idx = loop.index0 %}
+          </thead>
+          <tbody>
+            {% for m in job_matches|sort(attribute='score', reverse=True) %}
             <tr>
-                <td>{{ job.title }}</td>
-                <td>{{ job.score }}%</td>
-                <td>{{ job.feedback }}</td>
-                <td>
-                    {% if idx in applied_jobs %}
-                        <span style="color: green;">✔ Applied</span>
-                    {% else %}
-                        <span style="color: gray;">Not applied</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if idx not in applied_jobs %}
-                    <form method="POST" action="{{ url_for('apply_for_job', job_id=idx) }}" target="_blank" style="display:inline;">
-                        <button type="submit" class="apply-button">Apply</button>
-                    </form>
-                    {% else %}
-                    <a href="{{ job.apply_url }}" target="_blank" class="apply-button">View Job</a>
-                    {% endif %}
-                </td>
+              <td>{{ loop.index }}</td>
+              <td>{{ m.title }}</td>
+              <td>{{ m.score }}%</td>
+              <td>{{ m.feedback }}</td>
+              <td>
+                {% if m.id in applied_jobs %}
+                  <span class="muted">Applied</span>
+                {% else %}
+                  <form method="POST" action="{{ url_for('apply_for_job', job_id=m.id) }}" style="display:inline;">
+                    <button type="submit" class="btn">Apply</button>
+                  </form>
+                  {% if m.apply_url %}
+                    <a class="link" href="{{ m.apply_url }}" target="_blank" style="margin-left:6px;">External</a>
+                  {% endif %}
+                {% endif %}
+              </td>
             </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% else %}
-        <p>No matched jobs available.</p>
+      <p>No matched jobs available.</p>
     {% endif %}
-</section>
+  </section>
 
+  <!-- Skill gap -->
+  <section class="card">
+    <h3>Your Skill Gap Report</h3>
+    {% if skill_gap and skill_gap|length > 0 %}
+      <ul class="bullets">
+        {% for s in skill_gap %}<li>{{ s }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p>No skill gap detected or resume not uploaded yet.</p>
+    {% endif %}
+  </section>
 
-<section>
+  <!-- Courses -->
+  <section class="card">
+    <h3>Recommended Courses</h3>
+    {% if course_recs and course_recs|length > 0 %}
+      <div class="grid-cards">
+        {% for c in course_recs %}
+        <div class="course-card">
+          <div class="course-title">{{ c['title'] }}</div>
+          <a class="btn btn-outline" target="_blank" href="{{ c['url'] }}">View</a>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>No recommendations yet. Upload your resume!</p>
+    {% endif %}
+  </section>
+
+  <!-- Progress image if you still generate it -->
+  {% if progress_chart %}
+  <section class="card">
     <h3>Progress</h3>
-    {% if progress_chart %}
-        <img src="data:image/png;base64,{{ progress_chart }}" />
-    {% endif %}
-</section>
-{% endblock %}
+    <img src="data:image/png;base64,{{ progress_chart }}" style="max-width:100%;height:auto;" />
+  </section>
+  {% endif %}
+</div>
+
 <style>
-    .job-table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-    .job-table th, .job-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-    .job-table th { background: #f7f7f7; }
-    </style>
-    
+.table-wrap{overflow-x:auto;margin-top:.75rem}
+.job-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#0b1220}
+.job-table th,.job-table td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;color:#e8ecf5;text-align:left}
+.job-table thead th{background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));color:#f4f7ff;font-weight:700}
+.grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.course-card{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;background:#0b1220;display:flex;flex-direction:column;gap:10px}
+.course-title{font-weight:600}
+.bullets{padding-left:1.2rem}
+.muted{color:#9aa5b1}
+.pill.read{background:#2b3345;color:#cbd5e1;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700}
+</style>
+{% endblock %}

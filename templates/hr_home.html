@@ -1,0 +1,90 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container">
+  <h2>HR Home</h2>
+
+  <!-- Company Profile (standard, simple form) -->
+  <section class="card" style="max-width:720px;">
+    <h3>Company Profile</h3>
+    <form method="post" class="form">
+      <div class="form-row">
+        <label for="company_name">Company Name</label>
+        <input id="company_name" name="company_name" value="{{ profile.name }}" required>
+      </div>
+      <div class="form-row">
+        <label for="company_description">Company Description</label>
+        <textarea id="company_description" name="company_description" rows="5"
+          placeholder="Short and clear company overview.">{{ profile.description }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </form>
+  </section>
+
+  <!-- Your Jobs -->
+  <section class="card">
+    <h3>Your Jobs</h3>
+
+    {% if posted_jobs and posted_jobs|length > 0 %}
+    <div class="table-wrap">
+      <table class="job-table">
+        <thead>
+          <tr>
+            <th>SL No</th>
+            <th>Job Title</th>
+            <th>Description</th>
+            <th>Skills</th>
+            <th>Deadline</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for job in posted_jobs %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>
+              <a class="link" href="{{ url_for('screen_candidates', job_id=job.job_id) }}">
+                {{ job.title }}
+              </a>
+            </td>
+            <td>{{ job.description }}</td>
+            <td>{{ job.skills }}</td>
+            <td>{{ job.deadline }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p>No jobs posted yet.</p>
+    {% endif %}
+  </section>
+
+  <style>
+    .job-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: .75rem;
+    }
+
+    .job-table th,
+    .job-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    .job-table th {
+      background: #f7f7f7;
+    }
+
+    .job-table td:nth-child(3) {
+      max-width: 520px;
+    }
+
+    .job-table td:nth-child(4) {
+      max-width: 280px;
+    }
+  </style>
+
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container">
+    <h2>Welcome{{ ' ' + profile.full_name if profile.full_name else '' }}</h2>
+
+    <section class="card">
+        <h3>Your Profile</h3>
+        <p><strong>Objective:</strong> {{ profile.objective or '—' }}</p>
+        <p><strong>Gender:</strong> {{ profile.gender or '—' }}</p>
+        <p><strong>Education:</strong> {{ profile.education or '—' }}</p>
+        <p><strong>Experience:</strong> {{ profile.experience or '—' }}</p>
+        <p><strong>Skills:</strong> {{ profile.skills or '—' }}</p>
+        <p><strong>Hobbies:</strong> {{ profile.hobbies or '—' }}</p>
+        <p><a class="btn" href="{{ url_for('user_profile') }}">Edit Profile</a></p>
+    </section>
+
+    <section class="card">
+        <h3>Progress</h3>
+        <div style="margin:.5rem 0;">
+            <div>Jobs Applied: {{ applied }}/{{ total_jobs }}</div>
+            <div class="progress">
+                <div class="progress__bar" data-pct="{{ jobs_pct }}"></div>
+            </div>
+        </div>
+        <!-- Courses completed bar -->
+        <div style="margin:.5rem 0;">
+            <div>Courses Completed: {{ completed }}/{{ total_courses }}</div>
+            <div class="progress">
+                <div class="progress__bar is-green" data-pct="{{ courses_pct }}"></div>
+            </div>
+        </div>
+    </section>
+</div>
+<!-- place this at the bottom of the same template -->
+<script>
+(function () {
+  document.querySelectorAll('.progress__bar').forEach(function (el) {
+    var p = parseInt(el.dataset.pct || '0', 10);
+    if (isNaN(p) || p < 0) p = 0;
+    if (p > 100) p = 100;
+    el.style.width = p + '%';
+  });
+})();
+</script>
+{% endblock %}

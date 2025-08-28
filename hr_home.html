@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container">
+  <h2>HR Home</h2>
+
+  <section class="card">
+    <h3>Company Profile</h3>
+    <form method="post" class="form">
+      <div class="form-group">
+        <label for="company_name">Company Name</label>
+        <input id="company_name" name="company_name" value="{{ profile.name }}">
+      </div>
+      <div class="form-group">
+        <label for="company_description">Company Description</label>
+        <textarea id="company_description" name="company_description" rows="4">{{ profile.description }}</textarea>
+      </div>
+      <button type="submit">Save</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3>Your Jobs</h3>
+    {% if jobs %}
+      <table class="job-table">
+        <thead>
+          <tr><th>#</th><th>Title</th><th>Skills</th><th>Deadline</th><th>Screen</th></tr>
+        </thead>
+        <tbody>
+          {% for job in jobs %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ job.title }}</td>
+            <td>{{ job.skills }}</td>
+            <td>{{ job.deadline }}</td>
+            <td><a class="btn" href="{{ url_for('screen_candidates', job_id=job.id) }}">Screen</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No jobs yet. <a class="link" href="{{ url_for('post_job') }}">Post your first job</a>.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

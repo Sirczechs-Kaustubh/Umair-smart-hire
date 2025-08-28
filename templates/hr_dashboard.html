@@ -1,62 +1,84 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="container">
-    <h2>HR Dashboard</h2>
-    
-    <section class="card">
-        <h3>Post a New Job</h3>
-        <form method="post" action="{{ url_for('post_job') }}">
-            <div class="form-group">
-                <label for="title">Title:</label>
-                <input type="text" id="title" name="title" required>
-            </div>
-            <div class="form-group">
-                <label for="description">Description:</label>
-                <textarea id="description" name="description" required></textarea>
-            </div>
-            <div class="form-group">
-                <label for="skills">Skills (comma-separated):</label>
-                <input type="text" id="skills" name="skills" required>
-            </div>
-            <div class="form-group">
-                <label for="deadline">Deadline:</label>
-                <input type="date" id="deadline" name="deadline" required>
-            </div>
-            
-            <!-- === THIS IS THE NEW FIELD YOU NEED TO ADD === -->
-            <div class="form-group">
-                <label for="apply_url">Application URL:</label>
-                <input type="url" id="apply_url" name="apply_url" placeholder="https://example.com/apply/job-title" required>
-            </div>
-            <!-- === END OF NEW FIELD === -->
+  <h2>HR Dashboard</h2>
 
-            <button type="submit" class="btn">Post Job</button>
-        </form>
-    </section>
-    
-    <section class="card">
-        <h3>Screen Candidates</h3>
-        {% if jobs %}
-            <ul class="job-list">
-            {% for job in jobs %}
-                <li>
-                    <span>{{ job['title'] }}</span>
-                    <a href="{{ url_for('screen_candidates', job_id=job['id']) }}" class="btn-secondary">View Applicants</a>
-                </li>
+  <!-- Screen section -->
+  <section class="card">
+    <h3>Screen Candidates</h3>
+    {% if hr_jobs and hr_jobs|length > 0 %}
+      <form method="get" action="{{ url_for('screen_candidates_select') }}" class="form-row" style="display:flex; gap:8px; align-items:center;">
+        <label for="job_select">Select a Job</label>
+        <select id="job_select" name="job_id" required>
+          {% for job in hr_jobs %}
+            <option value="{{ job.id }}">{{ job.title }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">Open Screening</button>
+      </form>
+    {% else %}
+      <p>No jobs to screen. <a class="link" href="{{ url_for('post_job') }}">Post a job</a>.</p>
+    {% endif %}
+  </section>
+
+  <!-- Applied candidates -->
+  <section class="card">
+    <h3>Applied Candidates</h3>
+    {% if applicants_table and applicants_table|length > 0 %}
+      <div class="table-wrap">
+        <table class="applicant-table">
+          <thead>
+            <tr>
+              <th>SL No</th>
+              <th>Candidate</th>
+              <th>Job</th>
+              <th>Score</th>
+              <th>Status Message</th>
+              <th>Notify</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in applicants_table %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ row.candidate }}</td>
+              <td>{{ row.job_title }}</td>
+              <td>{{ row.score }}</td>
+              <td style="min-width:260px;">
+                <form method="post" action="{{ url_for('hr_notify') }}" style="display:flex; gap:8px; align-items:flex-start;">
+                  <input type="hidden" name="to_user_id" value="{{ row.user_id }}">
+                  <input type="hidden" name="job_id" value="{{ row.job_id }}">
+                  <textarea name="message" rows="2" placeholder="e.g., Shortlisted / Rejected / Interview on ..."></textarea>
+                  <button type="submit">Notify</button>
+                </form>
+              </td>
+              <td>—</td>
+            </tr>
             {% endfor %}
-            </ul>
-        {% else %}
-            <p>No jobs posted yet.</p>
-        {% endif %}
-    </section>
-    
-    <section class="card">
-        <h3>Resume-JD Match Analytics</h3>
-        {% if match_chart %}
-            <img src="data:image/png;base64,{{ match_chart }}" alt="Match Analytics Chart" style="max-width: 100%; height: auto;" />
-        {% else %}
-            <p>No analytics to display.</p>
-        {% endif %}
-    </section>
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p>No applications yet.</p>
+    {% endif %}
+  </section>
+
+  <!-- Analytics -->
+  <section class="card">
+    <h3>Resume–JD Match Analytics</h3>
+    {% if counts_chart %}
+      <img src="data:image/png;base64,{{ counts_chart }}" alt="Applicants per Job" style="max-width:100%;height:auto;">
+    {% else %}
+      <p>No jobs to analyze yet.</p>
+    {% endif %}
+  </section>
 </div>
+
+<style>
+.table-wrap{overflow-x:auto;margin-top:.75rem}
+.applicant-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#0b1220}
+.applicant-table th,.applicant-table td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);text-align:center;color:#e8ecf5}
+.applicant-table thead th{background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));color:#f4f7ff;font-weight:700}
+.applicant-table tbody tr:hover td{background:rgba(255,255,255,.03)}
+</style>
 {% endblock %}

@@ -1,6 +1,75 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2>Welcome to SmartHire</h2>
-<p>An AI-powered platform for resume screening, skill gap analysis, job and course recommendation.</p>
-<p><a href="{{ url_for('auth.login') }}">Login</a> or <a href="{{ url_for('auth.register') }}">Register</a> to get started!</p>
+<section class="hero">
+  <div class="hero-text">
+    <h1>Hire smarter with <span class="accent">AI-powered</span> screening</h1>
+    <p class="sub">
+      Parse resumes, detect skill gaps, and match candidates to roles in seconds—so your team can focus on the best talent.
+    </p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Create account</a>
+      <a class="btn btn-outline" href="{{ url_for('auth.login') }}">I already have an account</a>
+    </div>
+    <div class="mini-badges">
+      <span>🔒 Secure</span><span>⚡ Fast</span><span>🤝 Bias-aware</span>
+    </div>
+  </div>
+  <div class="hero-card">
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-num">10×</div>
+        <div class="metric-label">faster screening</div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">70%</div>
+        <div class="metric-label">less manual effort</div>
+      </div>
+      <div class="metric">
+        <div class="metric-num">95%</div>
+        <div class="metric-label">parse accuracy*</div>
+      </div>
+    </div>
+    <div class="glassy blurb">
+      Upload → Parse → Match → Shortlist
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="feature">
+    <h3>AI Resume Parsing</h3>
+    <p>Extract skills, education, and experience from PDF/DOCX/TXT with robust entity detection.</p>
+  </div>
+  <div class="feature">
+    <h3>Smart Matching</h3>
+    <p>Score candidates against JDs with concise feedback your recruiters can act on.</p>
+  </div>
+  <div class="feature">
+    <h3>Skill Gap Insights</h3>
+    <p>Pinpoint missing skills and auto-suggest courses to upskill candidates.</p>
+  </div>
+  <div class="feature">
+    <h3>HR Analytics</h3>
+    <p>Get an at-a-glance view of match distributions and funnel performance.</p>
+  </div>
+</section>
+
+<section id="about" class="about">
+  <h2>About</h2>
+  <p>
+    <strong>Smart Hire – AI-Powered Resume Screening System</strong><br/>
+    Smart Hire is an intelligent recruitment automation platform designed to streamline the hiring process. The system leverages Natural Language Processing (NLP) and Machine Learning to analyze resumes, extract key skills, and match candidate profiles with job requirements. By automating resume screening, Smart Hire reduces manual effort, minimizes bias, and accelerates shortlisting, ensuring recruiters can focus on the most qualified candidates. The platform provides structured candidate insights, making hiring more efficient, accurate, and data-driven.
+  </p>
+</section>
+
+<section class="cta-wide">
+  <div class="cta-card">
+    <h3>Ready to supercharge your hiring?</h3>
+    <p>Create an account in seconds and start screening with AI.</p>
+    <div>
+      <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Get Started</a>
+      <a class="btn btn-ghost" href="{{ url_for('auth.login') }}">Sign in</a>
+    </div>
+  </div>
+</section>
 {% endblock %}

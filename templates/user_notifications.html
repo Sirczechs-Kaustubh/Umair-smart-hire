@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container">
+  <h2>Notifications</h2>
+
+  {% if notifs and notifs|length > 0 %}
+    <div class="notif-list">
+      {% for n in notifs %}
+      <div class="notif-card">
+        <div class="notif-head">
+          <span class="pill {{ 'unread' if n.status=='unread' else 'read' }}">{{ n.status|title }}</span>
+          <small class="muted">{{ n.created_at.strftime('%Y-%m-%d %H:%M') if n.created_at else '' }}</small>
+        </div>
+        <p class="notif-text">{{ n.message }}</p>
+        {% if n.job_id is not none %}
+          <a class="link" href="{{ url_for('job_view', job_id=n.job_id) }}">View job</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>No notifications yet.</p>
+  {% endif %}
+</div>
+
+<style>
+.notif-list{display:grid;gap:12px}
+.notif-card{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;background:#0b1220}
+.notif-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.pill{padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700}
+.pill.unread{background:#ffd166;color:#1b2436}
+.pill.read{background:#2b3345;color:#cbd5e1}
+.notif-text{margin:6px 0}
+.muted{color:#9aa5b1}
+</style>
+{% endblock %}

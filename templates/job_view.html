@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container card">
+  <h2>{{ job.title }}</h2>
+  <p><strong>Skills:</strong> {{ job.skills }}</p>
+  <p><strong>Deadline:</strong> {{ job.deadline }}</p>
+  <p style="white-space:pre-wrap">{{ job.description }}</p>
+  {% if job.apply_url %}
+    <p><a class="btn btn-primary" target="_blank" href="{{ job.apply_url }}">Apply (external)</a></p>
+  {% else %}
+    <p class="muted">No external application URL provided.</p>
+  {% endif %}
+</div>
+{% endblock %}
