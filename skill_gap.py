@@ -13,8 +13,13 @@ def find_skill_gap(resume_skills, jd_skills):
     """
     # --- FIX 2: Added robust error handling and logging ---
     if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
-        print("ERROR in skill_gap: GEMINI_API_KEY not set.")
-        return []
+        # Fallback: local set-difference without external API
+        try:
+            rs = set([s.strip().lower() for s in (resume_skills or []) if s])
+            js = set([s.strip().lower() for s in (jd_skills or []) if s])
+            return [s for s in (js - rs)]
+        except Exception:
+            return []
 
     if not resume_skills or not jd_skills:
         return []

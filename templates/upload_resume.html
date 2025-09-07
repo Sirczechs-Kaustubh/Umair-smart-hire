@@ -1,9 +1,13 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2>Upload Resume</h2>
-<form method="post" enctype="multipart/form-data">
-    <label>Choose Resume (.pdf, .docx, .txt):</label>
-    <input type="file" name="resume_file" required>
-    <button type="submit">Upload</button>
-</form>
+<div class="container card" style="max-width:720px;">
+  <h2>Upload Resume</h2>
+  <form method="post" enctype="multipart/form-data" class="form">
+      <div class="form-row">
+        <label for="resume_file">Choose Resume (.pdf, .docx, .txt)</label>
+        <input id="resume_file" type="file" name="resume_file" accept=".pdf,.doc,.docx,.txt" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Upload & Parse</button>
+  </form>
+</div>
 {% endblock %}

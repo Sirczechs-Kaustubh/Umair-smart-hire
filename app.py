@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import pandas as pd
 
 # Import your local modules
-import resume_parser, skill_gap, course_recommender, job_matcher, dashboard
+import resume_parser, skill_gap, course_recommender, job_matcher, dashboard, rag
 
 # Import extensions and blueprints
 from extensions import db
@@ -138,14 +138,18 @@ def create_app():
     # ---------- Jinja helpers ----------
     @app.context_processor
     def inject_unread_counts():
+        ctx = {"user_unread_notifs": 0, "hr_sent_count": 0}
         try:
-            if session.get('role') == 'User' and session.get('user_id'):
+            if session.get('user_id'):
                 uid = int(session['user_id'])
-                unread = Notification.query.filter_by(to_user_id=uid, status='unread').count()
-                return {"user_unread_notifs": unread}
+                if session.get('role') == 'User':
+                    ctx["user_unread_notifs"] = Notification.query.filter_by(to_user_id=uid, status='unread').count()
+                elif session.get('role') == 'HR':
+                    # Count total notifications sent by this HR
+                    ctx["hr_sent_count"] = Notification.query.filter_by(from_hr_id=uid).count()
         except Exception:
             pass
-        return {"user_unread_notifs": 0}
+        return ctx
 
     @app.context_processor
     def inject_route_flags():
@@ -227,8 +231,9 @@ def create_app():
             # Return
             return df[required + ['id']].to_dict('records')
 
-        except Exception as e:
-            print("Error reading jobs.csv (pandas):", e)
+        except Exception:
+            # Fallback CSV reader will handle odd formats; avoid noisy logs
+            pass
 
         # --- Fallback: robust csv.reader with header mapping if possible ---
         jobs = []
@@ -477,6 +482,29 @@ def create_app():
                     file.save(path)
                     entities = resume_parser.parse_resume_file(path)
                     session['resume_info'] = entities
+                    # Also store raw text for richer semantic match (no DB schema change)
+                    try:
+                        with open(path, 'rb'):
+                            pass
+                        text = resume_parser.extract_text_from_file(path) or ''
+                        session['resume_text'] = text
+                    except Exception:
+                        session['resume_text'] = ''
+                    # Persist parsed entities into user profile to avoid repeated API calls
+                    try:
+                        prof = UserProfile.query.filter_by(user_id=session['user_id']).first()
+                        if not prof:
+                            prof = UserProfile(user_id=session['user_id'])
+                            db.session.add(prof)
+                        prof.resume_filename = filename
+                        # Store as comma-separated strings for simplicity
+                        prof.skills = ','.join(entities.get('skills', [])[:50])
+                        prof.experience = '\n'.join(entities.get('experience', [])[:50])
+                        prof.education = '\n'.join(entities.get('education', [])[:50])
+                        db.session.commit()
+                    except Exception as e:
+                        db.session.rollback()
+                        print('Failed to persist parsed resume entities:', e)
                     flash('Resume uploaded and parsed!', 'success')
                     return redirect(url_for('user_dashboard'))
             return render_template('upload_resume.html')
@@ -487,29 +515,118 @@ def create_app():
                 flash("Please log in to access this page.", "warning")
                 return redirect(url_for('auth.login'))
 
+            # Build resume_info from session cache or user profile (to minimize API calls)
             resume_info = session.get('resume_info')
+            if not resume_info:
+                prof = UserProfile.query.filter_by(user_id=session['user_id']).first()
+                if prof and (prof.skills or prof.experience or prof.education):
+                    resume_info = {
+                        'skills': [s.strip() for s in (prof.skills or '').split(',') if s.strip()],
+                        'experience': [e.strip() for e in (prof.experience or '').split('\n') if e.strip()],
+                        'education': [e.strip() for e in (prof.education or '').split('\n') if e.strip()],
+                    }
+            resume_text = session.get('resume_text', '')
+
             skill_gap_report, course_recs, job_matches, progress_chart = [], [], [], None
 
             jobs = get_jobs()
+
+            def composite_match(r_info, job):
+                # Coverage + semantic similarity
+                rskills = [s.strip() for s in r_info.get('skills', []) if s and s.strip()]
+                jd_sk = str(job.get('skills', '')).split(',') if pd.notna(job.get('skills')) else []
+                rs = set([s.lower() for s in rskills])
+                js = [s.strip().lower() for s in jd_sk if s]
+                js_set = set(js)
+                coverage = (len(rs & js_set) / len(js)) if js else 0.0
+                semantic = 0.0
+                try:
+                    import rag as _rag
+                    q = resume_text or ' '.join(rskills)
+                    jtxt = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')}"
+                    ranked = _rag.best_matches(q, [("0", jtxt)], top_k=1)
+                    if ranked:
+                        semantic = float(ranked[0][2])
+                except Exception:
+                    pass
+                cov_w = float(os.getenv('COVERAGE_WEIGHT', '0.65'))
+                sem_w = 1.0 - cov_w
+                score = int(round(100 * (cov_w * coverage + sem_w * semantic))) if (coverage or semantic) else 0
+                fb = f"Covers {int(coverage*100)}% JD skills; semantic {int(semantic*100)}%."
+                return score, fb
 
             if resume_info and jobs:
                 first_job_skills = str(jobs[0].get('skills', '')).split(',') if pd.notna(jobs[0].get('skills')) else []
                 resume_skills = resume_info.get('skills', [])
                 skill_gap_report = skill_gap.find_skill_gap(resume_skills, first_job_skills)
-                course_recs = course_recommender.recommend_courses(skill_gap_report)
+                # Use external API + RAG if available; fallback to CSV recommender
+                try:
+                    course_recs = course_recommender.recommend_courses_rag(resume_skills, top_n=10)
+                except Exception:
+                    course_recs = course_recommender.recommend_courses(skill_gap_report)
 
+                use_ai = os.getenv('USE_AI_MATCH', '0') == '1'
+                # Precompute semantic similarity for all jobs in a single pass (leverages reranker)
+                semantic_by_id = {}
+                try:
+                    import rag as _rag
+                    q = resume_text or ' '.join(resume_skills)
+                    items = []
+                    for job in jobs:
+                        jtxt = f"{job.get('title','')} {job.get('description','')} {job.get('skills','')}"
+                        items.append((str(job.get('id')), jtxt))
+                    ranked = _rag.best_matches(q, items, top_k=len(items))
+                    for jid, _txt, sc in ranked:
+                        try:
+                            semantic_by_id[int(jid)] = float(sc)
+                        except Exception:
+                            continue
+                except Exception:
+                    semantic_by_id = {}
+
+                # Precompute scores; call AI optionally for top N
+                prelim = []
                 for job in jobs:
-                    jd_inf = {
-                        'skills': str(job.get('skills', '')).split(',') if pd.notna(job.get('skills')) else [],
-                        'experience': job.get('experience', ''),
-                        'education': job.get('education', '')
-                    }
-                    score, feedback = job_matcher.match_resume_to_jd(resume_info, jd_inf)
+                    # Prefer batch semantic score when available
+                    rskills = [s.strip() for s in resume_info.get('skills', []) if s and s.strip()]
+                    jd_sk = str(job.get('skills', '')).split(',') if pd.notna(job.get('skills')) else []
+                    rs = set([s.lower() for s in rskills])
+                    js = [s.strip().lower() for s in jd_sk if s]
+                    js_set = set(js)
+                    coverage = (len(rs & js_set) / len(js)) if js else 0.0
+                    semantic = semantic_by_id.get(int(job.get('id')))
+                    if semantic is None:
+                        s, fb = composite_match(resume_info, job)
+                    else:
+                        cov_w = float(os.getenv('COVERAGE_WEIGHT', '0.65'))
+                        sem_w = 1.0 - cov_w
+                        s = int(round(100 * (cov_w * coverage + sem_w * float(semantic)))) if (coverage or semantic) else 0
+                        fb = f"Covers {int(coverage*100)}% JD skills; semantic {int(float(semantic)*100)}%."
+                    prelim.append((job, s, fb))
+
+                if use_ai:
+                    # Use AI only for top K jobs by simple score
+                    K = min(10, len(prelim))
+                    prelim.sort(key=lambda x: x[1], reverse=True)
+                    top = prelim[:K]
+                    rest = prelim[K:]
+                    enriched = []
+                    for job, s, fb in top:
+                        jd_inf = {
+                            'skills': str(job.get('skills', '')).split(',') if pd.notna(job.get('skills')) else [],
+                            'experience': job.get('experience', ''),
+                            'education': job.get('education', '')
+                        }
+                        ai_s, ai_fb = job_matcher.match_resume_to_jd(resume_info, jd_inf)
+                        enriched.append((job, ai_s, ai_fb))
+                    prelim = enriched + rest
+
+                for job, s, fb in prelim:
                     job_matches.append({
                         'id': job.get('id'),
                         'title': job.get('title', 'N/A'),
-                        'score': score,
-                        'feedback': feedback,
+                        'score': s,
+                        'feedback': fb,
                         'apply_url': job.get('apply_url', '#')
                     })
 
@@ -522,7 +639,8 @@ def create_app():
                 course_recs=course_recs,
                 job_matches=job_matches,
                 progress_chart=progress_chart,
-                applied_jobs=applied_jobs
+                applied_jobs=applied_jobs,
+                all_jobs=jobs
             )
 
         # ---------- Post Job (GET page + POST save; Apply URL optional) ----------
@@ -549,22 +667,14 @@ def create_app():
 
             jobs_csv = app.config['JOBS_CSV']
 
-            # Determine the row index that this new job will get in jobs.csv
-            new_index = 0
-            if os.path.exists(jobs_csv):
-                try:
-                    record_posted_job(
-                        hr_id=hr_id,
-                        job_id=new_index,
-                        title=title,
-                        description=description,   # <-- add
-                        skills=skills,             # <-- add
-                        deadline=deadline
-                    )
-                except Exception as e:
-                    print("Error writing posted.csv:", e)
+            # Determine the row index the new job will get in jobs.csv (current length)
+            try:
+                existing_jobs = get_jobs()
+                new_index = len(existing_jobs)
+            except Exception:
+                new_index = 0
 
-            # Append to jobs.csv (keep existing behavior)
+            # Append to jobs.csv
             row = pd.DataFrame([{
                 'title': title,
                 'description': description,
@@ -580,9 +690,16 @@ def create_app():
                 flash("Failed to save job. Check server logs/permissions.", "danger")
                 return redirect(url_for('post_job'))
 
-            # ALSO: record a minimal entry in posted.csv for HR Home
+            # Record the posted job with the correct job_id for HR views
             try:
-                record_posted_job(hr_id=hr_id, job_id=new_index, title=title, deadline=deadline)
+                record_posted_job(
+                    hr_id=hr_id,
+                    job_id=new_index,
+                    title=title,
+                    description=description,
+                    skills=skills,
+                    deadline=deadline
+                )
             except Exception as e:
                 print("Error writing posted.csv:", e)
 
@@ -598,34 +715,88 @@ def create_app():
 
             hr_id = str(session['user_id'])
 
-            # Jobs this HR posted (from posted.csv), keep their job_id (index in jobs.csv)
-            posted_jobs = get_posted_jobs(hr_id=hr_id)  # [{'job_id', 'title', 'deadline', 'description','skills',...}]
-            posted_ids = [int(j['job_id']) for j in posted_jobs]
+            # Normalize legacy posted.csv entries to ensure correct dropdown
+            try:
+                normalize_posted_ids()
+            except Exception as _e:
+                # Non-fatal; continue with best-effort data
+                pass
 
-            # Pull full jobs list from jobs.csv to enrich/validate
+            # Jobs this HR posted (from posted.csv)
+            posted_jobs = get_posted_jobs(hr_id=hr_id)  # [{'job_id','title','deadline','description','skills',...}]
+
+            # Pull full jobs list from jobs.csv for validation/enrichment
             all_jobs = get_jobs()
             job_by_id = {int(j['id']): j for j in all_jobs}
+            # Map title to ids (titles should generally be unique)
+            title_to_ids = {}
+            for j in all_jobs:
+                t = str(j.get('title', '')).strip()
+                if t:
+                    title_to_ids.setdefault(t, []).append(int(j['id']))
+
+            # Resolve job ids more robustly and build HR jobs list
             hr_jobs = []
+            posted_ids = []
             for pj in posted_jobs:
-                j = job_by_id.get(int(pj['job_id']))
+                raw_jid = pj.get('job_id')
+                try:
+                    jid = int(raw_jid)
+                except Exception:
+                    jid = -1
+
+                j = job_by_id.get(jid)
+                if not j:
+                    # Try title-based resolution if id seems wrong/missing
+                    title = str(pj.get('title', '')).strip()
+                    cand_ids = title_to_ids.get(title, [])
+                    if len(cand_ids) == 1:
+                        jid = cand_ids[0]
+                        j = job_by_id.get(jid)
+
                 if j:
                     hr_jobs.append(j)
+                    posted_ids.append(int(j['id']))
                 else:
-                    # fallback to posted.csv row if jobs.csv changed
+                    # fallback to posted.csv row
                     hr_jobs.append({
-                        'id': int(pj['job_id']),
+                        'id': jid,
                         'title': pj.get('title', 'Untitled'),
                         'skills': pj.get('skills', ''),
                         'description': pj.get('description', ''),
                         'deadline': pj.get('deadline', '')
                     })
+                    if jid >= 0:
+                        posted_ids.append(jid)
 
             # Applicants belonging to this HR's jobs
             applicants = get_applicants_for_jobs(posted_ids)  # from applications.csv
 
-            # Build "Applied Candidates" table + compute match scores
+            # Build "Applied Candidates" table + compute match scores (composite: coverage + semantic)
             rows = []
             resumes_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'resumes')
+            def compute_match(resume_skills_list, jd_skills_list, job_text, resume_text=''):
+                rs = set([s.strip().lower() for s in (resume_skills_list or []) if s])
+                js = [s.strip().lower() for s in (jd_skills_list or []) if s]
+                js_set = set(js)
+                # JD coverage (how many JD skills covered by resume)
+                coverage = (len(rs & js_set) / len(js)) if js else 0.0
+                # Semantic similarity via embeddings (optional)
+                semantic = 0.0
+                try:
+                    import rag as _rag
+                    q = resume_text or ' '.join(sorted(rs))
+                    ranked = _rag.best_matches(q, [("j", job_text or '')], top_k=1)
+                    if ranked:
+                        semantic = float(ranked[0][2])
+                except Exception:
+                    pass
+                # Weighted combo; prioritize coverage
+                cov_w = float(os.getenv('COVERAGE_WEIGHT', '0.65'))
+                sem_w = 1.0 - cov_w
+                score = int(round(100 * (cov_w * coverage + sem_w * semantic))) if (coverage or semantic) else 0
+                fb = f"Covers {int(coverage*100)}% JD skills; semantic {int(semantic*100)}%."
+                return score, fb
             for app_row in applicants:
                 try:
                     uid = int(app_row['user_id'])
@@ -633,25 +804,52 @@ def create_app():
                 except Exception:
                     continue
 
-                user = User.query.get(uid)
+                # SQLAlchemy 2.0: use Session.get instead of Query.get
+                try:
+                    user = db.session.get(User, uid)
+                except Exception:
+                    user = User.query.get(uid)
                 cand_name = user.username if user else f"User {uid}"
                 job = job_by_id.get(jid)
                 job_title = job['title'] if job else next((p['title'] for p in posted_jobs if int(p['job_id']) == jid), f"Job {jid}")
 
-                jd_info = {
-                    "skills": str(job.get('skills', '')).split(',') if job else [],
-                    "title": job_title,
-                    "description": job.get('description', '') if job else ''
-                }
+                jd_skills = str(job.get('skills', '')).split(',') if job else []
+                job_text = f"{job_title} {job.get('description','') if job else ''} {','.join(jd_skills)}"
 
+                # Prefer using stored user profile skills to avoid re-parsing / API calls
                 score = "-"
-                resume_file = app_row.get('resume_filename')
-                if resume_file:
-                    rpath = os.path.join(resumes_dir, resume_file)
-                    if os.path.isfile(rpath):
-                        resume_info = resume_parser.parse_resume_file(rpath)
-                        s, _fb = job_matcher.match_resume_to_jd(resume_info, jd_info)
-                        score = s if s is not None else "-"
+                try:
+                    prof = UserProfile.query.filter_by(user_id=uid).first()
+                except Exception:
+                    prof = None
+
+                if prof and prof.skills:
+                    res_skills = [s.strip() for s in (prof.skills or '').split(',') if s.strip()]
+                    # try to load resume text lazily
+                    rtext = ''
+                    try:
+                        resume_file = app_row.get('resume_filename')
+                        if resume_file:
+                            rpath = os.path.join(resumes_dir, resume_file)
+                            if os.path.isfile(rpath):
+                                rtext = resume_parser.extract_text_from_file(rpath) or ''
+                    except Exception:
+                        rtext = ''
+                    score, _fb = compute_match(res_skills, jd_skills, job_text, rtext)
+                else:
+                    # Last resort: extract resume text only; avoid external API in match
+                    resume_file = app_row.get('resume_filename')
+                    if resume_file:
+                        rpath = os.path.join(resumes_dir, resume_file)
+                        if os.path.isfile(rpath):
+                            try:
+                                text = resume_parser.extract_text_from_file(rpath) or ''
+                            except Exception:
+                                text = ''
+                            text_l = text.lower()
+                            # Build a naive skills list by checking JD skills presence in text
+                            res_skills = [s for s in jd_skills if s and s.strip().lower() in text_l]
+                            score, _fb = compute_match(res_skills, jd_skills, job_text, text)
 
                 rows.append({
                     "user_id": uid,
@@ -661,31 +859,22 @@ def create_app():
                     "score": score,
                 })
 
-            # --- Analytics: applicants per job (including zeros) ---
-            from collections import Counter
-            counts = Counter(int(a['job_id']) for a in applicants if str(a.get('job_id','')).isdigit())
-            chart_labels = [j['title'] for j in hr_jobs]                       # ordered by hr_jobs
-            chart_values = [counts.get(int(j['id']), 0) for j in hr_jobs]
-
-            # Bar chart (PNG base64). If no jobs, don't draw empty axes.
+            # --- Analytics: Resume–JD match distribution ---
             counts_chart = None
-            if chart_labels:
-                import matplotlib
-                matplotlib.use('Agg')
-                import matplotlib.pyplot as plt
-                import io, base64
-
-                buf = io.BytesIO()
-                plt.figure(figsize=(8,4.5))
-                plt.bar(range(len(chart_values)), chart_values)
-                plt.xticks(range(len(chart_labels)), chart_labels, rotation=25, ha='right')
-                plt.ylabel('Number of Candidates')
-                plt.title('Applicants per Job')
-                plt.tight_layout()
-                plt.savefig(buf, format='png')
-                buf.seek(0)
-                counts_chart = base64.b64encode(buf.getvalue()).decode()
-                plt.close()
+            try:
+                match_scores = []
+                for r in rows:
+                    s = r.get('score')
+                    if s is None or s == "-":
+                        continue
+                    try:
+                        match_scores.append(float(s))
+                    except Exception:
+                        continue
+                if match_scores:
+                    counts_chart = dashboard.generate_hr_stats(match_scores)
+            except Exception as e:
+                print("Error generating HR analytics chart:", e)
 
             # For the "Screen candidates" selector we need hr_jobs (id + title)
             # Normalize to a small dict
@@ -719,7 +908,11 @@ def create_app():
                 flash("Company profile saved.", "success")
                 return redirect(url_for('hr_home'))
 
-            # ✅ Read the HR's posted jobs from posted.csv
+            # Normalize legacy posted.csv entries; then read the HR's posted jobs
+            try:
+                normalize_posted_ids()
+            except Exception:
+                pass
             hr_id = str(session['user_id'])
             posted_jobs = get_posted_jobs(hr_id=str(session['user_id']))
 
@@ -736,6 +929,91 @@ def create_app():
                 writer.writeheader()
                 for r in data:
                     writer.writerow(r)
+
+        def normalize_posted_ids():
+            """Align posted.csv job_id values with jobs.csv using title and HR.
+            - Resolves wrong/missing IDs by matching (hr_id, title) to jobs.csv
+            - Fills missing description/skills/deadline from jobs.csv
+            - Rewrites posted.csv with canonical 6-column header
+            """
+            posted_csv = app.config['POSTED_CSV']
+            if not os.path.isfile(posted_csv):
+                return
+
+            # Read robust version of posted rows
+            posted_rows = get_posted_jobs(hr_id=None)
+            if not posted_rows:
+                return
+
+            jobs = get_jobs()
+            if jobs is None:
+                jobs = []
+
+            id_to_job = {int(j['id']): j for j in jobs if str(j.get('id','')).isdigit()}
+            title_hr_to_ids = {}
+            title_to_ids = {}
+            for j in jobs:
+                try:
+                    jid = int(j['id'])
+                except Exception:
+                    continue
+                title = str(j.get('title','')).strip()
+                h = str(j.get('hr_id','')).strip()
+                if title:
+                    title_to_ids.setdefault(title, []).append(jid)
+                    title_hr_to_ids.setdefault((h, title), []).append(jid)
+
+            updated = []
+            changed = False
+            for r in posted_rows:
+                hr = str(r.get('hr_id','')).strip()
+                title = str(r.get('title','')).strip()
+                try:
+                    jid = int(r.get('job_id'))
+                except Exception:
+                    jid = -1
+
+                job = id_to_job.get(jid)
+                if not job:
+                    # Try (hr_id, title) first, then title-only
+                    cand = title_hr_to_ids.get((hr, title)) or title_to_ids.get(title) or []
+                    if len(cand) == 1:
+                        jid = cand[0]
+                        job = id_to_job.get(jid)
+                        changed = True
+
+                # Fill/align fields
+                title_out = title or (job.get('title','') if job else '')
+                desc_out = (r.get('description') or '').strip() or (job.get('description','') if job else '')
+                skills_out = (r.get('skills') or '').strip() or (job.get('skills','') if job else '')
+                deadline_out = (r.get('deadline') or '').strip() or (job.get('deadline','') if job else '')
+
+                updated.append({
+                    'hr_id': hr,
+                    'job_id': int(jid) if isinstance(jid, int) and jid >= 0 else (int(job['id']) if job else -1),
+                    'title': title_out,
+                    'description': desc_out,
+                    'skills': skills_out,
+                    'deadline': deadline_out,
+                })
+
+            if changed:
+                tmp_path = posted_csv + '.tmp'
+                with open(tmp_path, 'w', encoding='utf-8', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=['hr_id','job_id','title','description','skills','deadline'])
+                    writer.writeheader()
+                    for r in updated:
+                        writer.writerow(r)
+                # Atomic-ish replace
+                try:
+                    os.replace(tmp_path, posted_csv)
+                except Exception:
+                    # Fallback: overwrite
+                    with open(posted_csv, 'w', encoding='utf-8', newline='') as f:
+                        writer = csv.DictWriter(f, fieldnames=['hr_id','job_id','title','description','skills','deadline'])
+                        writer.writeheader()
+                        for r in updated:
+                            writer.writerow(r)
 
 
         # def get_posted_jobs(hr_id: str | None = None):
@@ -915,6 +1193,179 @@ def create_app():
 
             return render_template('screen_candidates.html', job=selected_job, applicants=applicant_rows)
 
+        @app.route('/hr/normalize_posted')
+        def hr_normalize_posted():
+            if 'user_id' not in session or session.get('role') != 'HR':
+                flash("Please log in as an HR user to access this page.", "warning")
+                return redirect(url_for('auth.login'))
+            try:
+                normalize_posted_ids()
+                flash('Posted jobs normalized successfully.', 'success')
+            except Exception as e:
+                print('Error normalizing posted.csv:', e)
+                flash('Failed to normalize posted jobs. Check server logs.', 'danger')
+            return redirect(url_for('hr_dashboard'))
+
+        @app.route('/admin/seed_data')
+        def admin_seed_data():
+            # Simple seed endpoint; restrict to HR users for safety
+            if 'user_id' not in session or session.get('role') != 'HR':
+                flash("Please log in as an HR user to access this page.", "warning")
+                return redirect(url_for('auth.login'))
+
+            jobs_csv = app.config['JOBS_CSV']
+            posted_csv = app.config['POSTED_CSV']
+
+            # Count existing jobs quickly
+            existing = 0
+            if os.path.isfile(jobs_csv):
+                try:
+                    with open(jobs_csv, 'r', encoding='utf-8') as f:
+                        existing = max(sum(1 for _ in f) - 1, 0)
+                except Exception:
+                    existing = 0
+
+            # Only seed if there are few jobs
+            if existing < 6:
+                samples = [
+                    {
+                        'title': 'Backend Engineer',
+                        'description': 'Build APIs and services with Python and Flask.',
+                        'skills': 'python,flask,sql,linux,git',
+                        'deadline': '2025-12-31',
+                        'apply_url': 'https://example.com/jobs/be'
+                    },
+                    {
+                        'title': 'Data Analyst',
+                        'description': 'Analyze datasets and create dashboards.',
+                        'skills': 'sql,excel,tableau,python,pandas',
+                        'deadline': '2025-11-30',
+                        'apply_url': 'https://example.com/jobs/da'
+                    },
+                    {
+                        'title': 'ML Engineer',
+                        'description': 'Deploy ML models in production.',
+                        'skills': 'python,sklearn,mlops,aws,docker',
+                        'deadline': '2025-10-15',
+                        'apply_url': 'https://example.com/jobs/mle'
+                    },
+                    {
+                        'title': 'Frontend Developer',
+                        'description': 'Develop UI with React.',
+                        'skills': 'javascript,react,html,css,webpack',
+                        'deadline': '2025-09-30',
+                        'apply_url': 'https://example.com/jobs/fe'
+                    },
+                    {
+                        'title': 'DevOps Engineer',
+                        'description': 'Automate CI/CD and infra.',
+                        'skills': 'ci,cd,linux,aws,docker,kubernetes',
+                        'deadline': '2025-12-01',
+                        'apply_url': 'https://example.com/jobs/devops'
+                    },
+                    {
+                        'title': 'Product Manager',
+                        'description': 'Own roadmap and delivery.',
+                        'skills': 'roadmap,communication,agile,stakeholder management',
+                        'deadline': '2025-12-20',
+                        'apply_url': 'https://example.com/jobs/pm'
+                    },
+                ]
+                try:
+                    # Determine starting index
+                    start_idx = 0
+                    if os.path.isfile(jobs_csv):
+                        try:
+                            import pandas as _pd
+                            _df = _pd.read_csv(jobs_csv)
+                            start_idx = len(_df)
+                        except Exception:
+                            start_idx = existing
+
+                    # Append rows
+                    hdr_needed = not os.path.exists(jobs_csv)
+                    with open(jobs_csv, 'a', encoding='utf-8', newline='') as f:
+                        writer = csv.DictWriter(f, fieldnames=['title','description','skills','deadline','apply_url','hr_id'])
+                        if hdr_needed:
+                            writer.writeheader()
+                        for i, s in enumerate(samples):
+                            writer.writerow({
+                                **s,
+                                'hr_id': str(session['user_id'])
+                            })
+
+                    # Mirror to posted.csv
+                    file_exists = os.path.isfile(posted_csv)
+                    with open(posted_csv, 'a', encoding='utf-8', newline='') as f:
+                        writer = csv.DictWriter(f, fieldnames=['hr_id','job_id','title','description','skills','deadline'])
+                        if not file_exists:
+                            writer.writeheader()
+                        for i, s in enumerate(samples):
+                            writer.writerow({
+                                'hr_id': str(session['user_id']),
+                                'job_id': start_idx + i,
+                                'title': s['title'],
+                                'description': s['description'],
+                                'skills': s['skills'],
+                                'deadline': s['deadline'],
+                            })
+                    flash('Seeded sample jobs for better recommendations.', 'success')
+                except Exception as e:
+                    print('Seeding error:', e)
+                    flash('Failed to seed sample data.', 'danger')
+            else:
+                flash('Sufficient jobs already present. No seeding needed.', 'info')
+            return redirect(url_for('user_dashboard'))
+
+        @app.route('/admin/warmup_embeddings')
+        def admin_warmup_embeddings():
+            if 'user_id' not in session or session.get('role') != 'HR':
+                flash("Please log in as an HR user to access this page.", "warning")
+                return redirect(url_for('auth.login'))
+
+            # 1) Warm-up embedder by encoding job texts
+            jobs = []
+            try:
+                jobs = get_jobs()
+            except Exception:
+                jobs = []
+
+            job_texts = []
+            for j in jobs[:100]:  # limit warmup size
+                job_texts.append(f"{j.get('title','')} {j.get('description','')} {j.get('skills','')}")
+
+            encoded_n = 0
+            try:
+                encoded_n = rag.warmup(job_texts)
+            except Exception:
+                encoded_n = 0
+
+            # 2) Prefetch external courses for top skills and warm ranking path
+            prefetch = 0
+            ranked_ok = False
+            try:
+                # Collect skills
+                skill_counts = {}
+                for j in jobs:
+                    for s in str(j.get('skills','')).split(','):
+                        s2 = s.strip().lower()
+                        if not s2:
+                            continue
+                        skill_counts[s2] = skill_counts.get(s2, 0) + 1
+                top_skills = [k for k,_ in sorted(skill_counts.items(), key=lambda x: x[1], reverse=True)[:6]] or ['python','sql','react']
+                # Prefetch and cache
+                courses = course_recommender.fetch_courses_external(top_skills, max_per_skill=4)
+                prefetch = len(courses)
+                # Warm ranking (embeddings or Jaccard) on the prefetch set
+                items = [(str(i), f"{c.get('title','')} {c.get('description','')}") for i,c in enumerate(courses[:20])]
+                _ = rag.best_matches(' '.join(top_skills), items, top_k=5)
+                ranked_ok = True
+            except Exception:
+                pass
+
+            flash(f"Embeddings warm-up: encoded {encoded_n} job texts; pre-fetched {prefetch} courses; ranking ready: {'yes' if ranked_ok else 'no'}.", 'success')
+            return redirect(url_for('hr_dashboard'))
+
         @app.route('/logout')
         def logout():
             session.clear()
@@ -928,7 +1379,19 @@ def create_app():
                 return redirect(url_for('auth.login'))
 
             uid = session['user_id']
+            # Fetch notifications
             notifs = Notification.query.filter_by(to_user_id=uid).order_by(Notification.created_at.desc()).all()
+            # Mark unread as read in one transaction
+            try:
+                unread = [n for n in notifs if n.status == 'unread']
+                if unread:
+                    for n in unread:
+                        n.status = 'read'
+                    db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                print('Failed to mark notifications as read:', e)
+
             return render_template('user_notifications.html', notifs=notifs)
 
         @app.route('/user/apply/<int:job_id>', methods=['POST'])
@@ -1007,5 +1470,3 @@ if __name__ == '__main__':
 
         
         
-
-

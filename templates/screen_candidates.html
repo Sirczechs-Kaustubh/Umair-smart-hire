@@ -1,57 +1,49 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="container">
-    <h2>Screening Candidates for: <em>{{ job.title }}</em></h2>
-    <p><strong>Job Description:</strong> {{ job.description }}</p>
-    <p><strong>Skills Required:</strong> {{ job.skills }}</p>
-    <hr />
+  <section class="card">
+    <h2>Screening: <em>{{ job.title }}</em></h2>
+    <p class="muted" style="white-space:pre-wrap">{{ job.description }}</p>
+    <div style="margin:.5rem 0;">
+      {% for s in (job.skills or '').split(',') %}
+        {% if s.strip() %}<span class="chip">{{ s.strip() }}</span>{% endif %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>Applicants</h3>
     {% if applicants %}
-    <table class="applicant-table">
-        <thead>
+      <div class="table-wrap">
+        <table class="applicant-table">
+          <thead>
             <tr>
-                <th>#</th>
-                <th>User ID</th>
-                <th>Resume</th>
-                <th>Match Score (%)</th>
-                <th>AI Feedback</th>
+              <th>#</th>
+              <th>User ID</th>
+              <th>Resume</th>
+              <th>Match Score (%)</th>
+              <th>Feedback</th>
             </tr>
-        </thead>
-        <tbody>
-            {% for a in applicants %}
+          </thead>
+          <tbody>
+          {% for a in applicants %}
             <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ a.user_id }}</td>
-                <td>{{ a.resume_filename }}</td>
-                <td>{{ a.score }}</td>
-                <td>{{ a.feedback }}</td>
+              <td>{{ loop.index }}</td>
+              <td>{{ a.user_id }}</td>
+              <td>{{ a.resume_filename }}</td>
+              <td>{{ a.score }}</td>
+              <td style="text-align:left">{{ a.feedback }}</td>
             </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% else %}
-        <p>No applicants found for this job yet.</p>
+      <p>No applicants found for this job yet.</p>
     {% endif %}
-    <p>
-        <a href="{{ url_for('hr_dashboard') }}" class="btn-secondary">Back to HR Dashboard</a>
-    </p>
+    <div style="margin-top:.75rem;">
+      <a href="{{ url_for('hr_dashboard') }}" class="btn btn-outline">Back to HR Dashboard</a>
+    </div>
+  </section>
 </div>
-<style>
-.applicant-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 1em;
-}
-.applicant-table th, .applicant-table td {
-    border: 1px solid #ddd;
-    padding: 8px;
-}
-.applicant-table th {
-    background: #f7f7f7;
-    font-weight: bold;
-    text-align: center;
-}
-.applicant-table td {
-    text-align: center;
-}
-</style>
 {% endblock %}

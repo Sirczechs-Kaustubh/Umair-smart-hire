@@ -8,7 +8,7 @@
     <h3>Jobs Available</h3>
     {% if all_jobs and all_jobs|length > 0 %}
       <div class="table-wrap">
-        <table class="job-table">
+        <table class="job-table mobile-compact">
           <thead>
             <tr>
               <th>#</th>
@@ -17,7 +17,7 @@
               <th>Deadline</th>
               <th>Apply</th>
               <th>View</th>
-              <th>Status</th>
+              <th class="status-cell">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -33,12 +33,12 @@
                   <span class="muted">Applied</span>
                 {% else %}
                   <form method="POST" action="{{ url_for('apply_for_job', job_id=jid) }}" target="_blank" style="display:inline;">
-                    <button type="submit" class="btn">Apply</button>
+                    <button type="submit" class="btn btn-sm">Apply</button>
                   </form>
                 {% endif %}
               </td>
               <td><a class="link" href="{{ url_for('job_view', job_id=jid) }}" target="_blank">View Job</a></td>
-              <td>{% if jid in applied_jobs %}<span class="pill read">Applied</span>{% else %}—{% endif %}</td>
+              <td class="status-cell">{% if jid in applied_jobs %}<span class="pill read status-pill">Applied</span>{% else %}—{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -86,7 +86,7 @@
                   <span class="muted">Applied</span>
                 {% else %}
                   <form method="POST" action="{{ url_for('apply_for_job', job_id=m.id) }}" style="display:inline;">
-                    <button type="submit" class="btn">Apply</button>
+                    <button type="submit" class="btn btn-sm">Apply</button>
                   </form>
                   {% if m.apply_url %}
                     <a class="link" href="{{ m.apply_url }}" target="_blank" style="margin-left:6px;">External</a>
@@ -122,7 +122,12 @@
       <div class="grid-cards">
         {% for c in course_recs %}
         <div class="course-card">
-          <div class="course-title">{{ c['title'] }}</div>
+          <div class="course-title">
+            {{ c['title'] }}
+            {% if c['score'] is defined %}
+              <span class="badge score">{{ c['score'] }}%</span>
+            {% endif %}
+          </div>
           <a class="btn btn-outline" target="_blank" href="{{ c['url'] }}">View</a>
         </div>
         {% endfor %}
@@ -143,14 +148,9 @@
 
 <style>
 .table-wrap{overflow-x:auto;margin-top:.75rem}
-.job-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:#0b1220}
-.job-table th,.job-table td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;color:#e8ecf5;text-align:left}
-.job-table thead th{background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));color:#f4f7ff;font-weight:700}
 .grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .course-card{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;background:#0b1220;display:flex;flex-direction:column;gap:10px}
 .course-title{font-weight:600}
 .bullets{padding-left:1.2rem}
-.muted{color:#9aa5b1}
-.pill.read{background:#2b3345;color:#cbd5e1;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700}
 </style>
 {% endblock %}

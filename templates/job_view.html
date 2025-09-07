@@ -1,14 +1,19 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="container card">
-  <h2>{{ job.title }}</h2>
-  <p><strong>Skills:</strong> {{ job.skills }}</p>
-  <p><strong>Deadline:</strong> {{ job.deadline }}</p>
+  <h2 style="margin-bottom:.25rem">{{ job.title }}</h2>
+  <div class="muted" style="margin-bottom:.5rem">Deadline: {{ job.deadline or '—' }}</div>
+  <div style="margin:.25rem 0 .75rem 0;">
+    {% for s in (job.skills or '').split(',') %}
+      {% if s.strip() %}<span class="chip">{{ s.strip() }}</span>{% endif %}
+    {% endfor %}
+  </div>
   <p style="white-space:pre-wrap">{{ job.description }}</p>
-  {% if job.apply_url %}
-    <p><a class="btn btn-primary" target="_blank" href="{{ job.apply_url }}">Apply (external)</a></p>
-  {% else %}
-    <p class="muted">No external application URL provided.</p>
-  {% endif %}
+  <div style="margin-top:1rem; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
+    {% if job.apply_url %}
+      <a class="btn btn-primary" target="_blank" href="{{ job.apply_url }}">Apply (external)</a>
+    {% endif %}
+    <a class="btn btn-outline" href="{{ url_for('user_dashboard') }}">Back to Dashboard</a>
+  </div>
 </div>
 {% endblock %}

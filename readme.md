@@ -125,10 +125,47 @@ SmartHire/
 
 ## 🤖 AI Model
 
-- All AI functions use [Gemini 1.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-1.5) via Google’s API for:
-    - Resume parsing
-    - Job-resume matching
+- All AI functions can use [Gemini 1.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-1.5) via Google’s API for:
+    - Resume parsing (merged with local extraction by default)
+    - Job-resume matching (optionally blended with local semantic scoring)
     - Skill gap analysis
+
+---
+
+## 🔍 Matching & Parsing (Upgraded)
+
+- Local resume parsing is robust and fast:
+  - PDF extraction tries PyPDF2 → pdfminer.six → PyMuPDF (if installed)
+  - Optional spaCy-assisted skill extraction via `PhraseMatcher` (set `SPACY_MODEL=en_core_web_sm` and install if desired)
+  - Section-aware skill detection + fuzzy matching + keyword extraction
+- Semantic similarity uses Sentence-Transformers embeddings with strong defaults and fallbacks:
+  - Preferred: set `EMBEDDINGS_MODEL` (e.g., `BAAI/bge-base-en-v1.5` or `mixedbread-ai/mxbai-embed-large-v1`)
+  - Fallback: `all-MiniLM-L6-v2`
+- Optional reranker boosts result quality:
+  - CrossEncoder model (default `cross-encoder/ms-marco-MiniLM-L-6-v2`) reorders top candidates
+  - Enable with `USE_RERANKER=1` (default on)
+- Scoring blends hard skill coverage with semantic similarity; tune with `COVERAGE_WEIGHT` (default `0.65`).
+
+### Suggested Installs (optional but recommended)
+```
+pip install spacy pdfminer.six pymupdf
+python -m spacy download en_core_web_sm
+```
+
+---
+
+## ⚙️ Configuration
+
+Add any of the following to `.env` as needed:
+
+- `PARSE_WITH_LLM_ONLY=0` (default): merge local + LLM. Set to `1` for LLM-only.
+- `EMBEDDINGS_MODEL=BAAI/bge-base-en-v1.5` (or another HF model name)
+- `USE_RERANKER=1` and `RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2`
+- `COVERAGE_WEIGHT=0.65` to balance skill coverage vs semantic similarity
+- `USE_AI_MATCH=1` to invoke Gemini on top candidates (blended with local by default)
+- `AI_BLEND_WEIGHT=0.4` (0 = local only, 1 = AI only) when `USE_AI_MATCH=1`
+
+To warm the embedder and caches (optional), visit `/admin/warmup_embeddings` as an HR user.
 
 ---
 

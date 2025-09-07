@@ -1,6 +1,7 @@
 import requests
 import os
 import json
+from typing import Tuple, List
 
 # It's better to read the API key once and build the full URL.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -10,14 +11,46 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
 
 
+def _local_match(resume_info: dict, jd_info: dict) -> Tuple[int, str]:
+    """Embedding + coverage based score. Returns (0-100 score, short feedback)."""
+    try:
+        import rag
+    except Exception:
+        rag = None  # type: ignore
+
+    rskills: List[str] = [s.strip() for s in (resume_info or {}).get('skills', []) if s and s.strip()]
+    jskills: List[str] = [s.strip() for s in (jd_info or {}).get('skills', []) if s and s.strip()]
+    rs = set(s.lower() for s in rskills)
+    js = set(s.lower() for s in jskills)
+    coverage = (len(rs & js) / len(js)) if js else 0.0
+
+    # Build text representations for semantic match
+    rtext = ' '.join(rskills + (resume_info or {}).get('education', []) + (resume_info or {}).get('experience', []))
+    jtext = ' '.join(jskills + [str((jd_info or {}).get('description', ''))])
+    semantic = 0.0
+    if rag:
+        try:
+            ranked = rag.best_matches(rtext or ' '.join(rskills), [("jd", jtext)], top_k=1)
+            if ranked:
+                semantic = float(ranked[0][2])
+        except Exception:
+            semantic = 0.0
+    # Combine; give more weight to hard skill coverage
+    cov_w = float(os.getenv('COVERAGE_WEIGHT', '0.65'))
+    sem_w = 1.0 - cov_w
+    score = int(round(100 * (cov_w * coverage + sem_w * semantic))) if (coverage or semantic) else 0
+    fb = f"Covers {int(coverage*100)}% JD skills; semantic {int(semantic*100)}%."
+    return score, fb
+
+
 def match_resume_to_jd(resume_info, jd_info):
     """
-    Uses Gemini to compute a match score and short feedback. This version is more robust.
+    Uses Gemini to compute a match score and short feedback when configured.
+    Otherwise, uses a strong local embedding-based scorer with reranking.
     """
-    # 1. Check if the API key is missing.
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
-        print("ERROR: GEMINI_API_KEY environment variable not set or is a placeholder.")
-        return 0, "API key is not configured."
+    # If API key is missing or disabled, use local scorer
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY" or os.getenv('USE_AI_MATCH', '0') != '1':
+        return _local_match(resume_info, jd_info)
 
     # 2. A more robust prompt asking specifically for a JSON object.
     prompt = (
@@ -67,12 +100,20 @@ def match_resume_to_jd(resume_info, jd_info):
             score = 0
             feedback = "Could not parse score from response."
 
-        return score, feedback
+        # Blend AI score with local score to stabilize outputs
+        try:
+            lscore, lfb = _local_match(resume_info, jd_info)
+            blend_w = float(os.getenv('AI_BLEND_WEIGHT', '0.4'))  # 0 = local only, 1 = AI only
+            final = int(round((blend_w * float(score)) + ((1.0 - blend_w) * float(lscore))))
+            feedback = feedback or lfb
+            return final, feedback
+        except Exception:
+            return score, feedback
 
     except requests.exceptions.RequestException as e:
         # Handle network errors
         print(f"Network Error: Could not connect to Gemini API. {e}")
-        return 0, "Network error connecting to API."
+        return _local_match(resume_info, jd_info)
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         # Handle errors during parsing of the response. This is the most important block for debugging.
         print(f"--- PARSING ERROR ---")
@@ -83,10 +124,10 @@ def match_resume_to_jd(resume_info, jd_info):
             print(f"--- Raw Text That Failed to Parse ---\n{cleaned_text}\n-------------------------------------")
         elif 'response' in locals() and hasattr(response, 'text'):
              print(f"--- Raw API Response ---\n{response.text}\n--------------------------")
-        return 0, 'Could not parse matching response'
+        return _local_match(resume_info, jd_info)
     except Exception as e:
         # Catch any other unexpected errors
         print(f"An unexpected error occurred: {e}")
         if 'response' in locals() and hasattr(response, 'text'):
              print(f"--- Raw API Response ---\n{response.text}\n--------------------------")
-        return 0, 'An unexpected error occurred.'
+        return _local_match(resume_info, jd_info)

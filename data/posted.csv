@@ -3,3 +3,30 @@ hr_id,job_id,title,deadline
 7,0,jhg,"python, flask, nlp","python, flask, nlp",2025-08-27
 7,0,test analyst,"Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.","python, flask, nlp,python, flask, nlp.python, flask, nlp.python, flask, nlp",2025-08-28
 7,0,Umair's job,"Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.","java, javascript, html, css, tailwind, python, data structures, php, SQL",2025-08-28
+2,11,AI Engineer,"About Us:
+Quantifi is at the forefront of AI-driven logistics and supply chain optimization. We create custom machine learning algorithms that help businesses achieve peak efficiency by predicting bottlenecks, optimizing routes, and streamlining resource management. Our team is passionate about building intelligent solutions that solve complex, real-world problems.
+
+The Role:
+We are looking for a skilled AI Engineer to join our growing team. You will be instrumental in the end-to-end development of our core products, from building and training machine learning models to deploying them in production environments. This role requires a strong blend of technical expertise and a creative approach to problem-solving.
+
+Responsibilities:
+
+Design, develop, and deploy scalable AI and machine learning models for logistics optimization.
+
+Work with large-scale datasets to identify patterns and create predictive algorithms.
+
+Collaborate with our data science and engineering teams to integrate models into our platform.
+
+Research and implement the latest advancements in AI to improve our product offerings.
+
+Qualifications:
+
+Bachelor's or Master's degree in Computer Science, AI, or a related technical field.
+
+Proven experience with Python and machine learning frameworks (e.g., TensorFlow, PyTorch).
+
+Experience with data manipulation and analysis libraries (e.g., Pandas, NumPy).
+
+Familiarity with cloud services like AWS, GCP, or Azure.
+
+Strong communication skills and a collaborative mindset.","Python, TensorFlow, PyTorch, Pandas, NumPy, AWS, GCP, Azure, communication skills, collaborative mindset.",2025-09-15
