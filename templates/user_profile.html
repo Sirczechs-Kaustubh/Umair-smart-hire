@@ -3,6 +3,7 @@
 <div class="container card" style="max-width:820px;">
   <h2>Profile</h2>
   <form method="post" enctype="multipart/form-data" class="form">
+    {{ csrf_token() }}
     <div class="form-row"><label>Full Name</label><input name="full_name" value="{{ profile.full_name }}"></div>
     <div class="form-row"><label>Career Objective</label><textarea name="objective" rows="3">{{ profile.objective }}</textarea></div>
     <div class="form-row">

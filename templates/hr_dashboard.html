@@ -46,6 +46,7 @@
               <td>{{ row.score }}</td>
               <td style="min-width:260px;">
                 <form method="post" action="{{ url_for('hr_notify') }}" style="display:flex; gap:8px; align-items:flex-start;">
+                  {{ csrf_token() }}
                   <input type="hidden" name="to_user_id" value="{{ row.user_id }}">
                   <input type="hidden" name="job_id" value="{{ row.job_id }}">
                   <textarea name="message" rows="2" placeholder="e.g., Shortlisted / Rejected / Interview on ..."></textarea>

@@ -5,6 +5,7 @@
     <h2 class="auth-title">Welcome back</h2>
     <p class="auth-sub">Sign in to continue to SmartHire</p>
     <form method="post" class="form">
+      {{ csrf_token() }}
       <div class="form-row">
         <label for="username">Username</label>
         <input id="username" type="text" name="username" autocomplete="username" required />

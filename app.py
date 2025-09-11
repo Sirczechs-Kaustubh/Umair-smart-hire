@@ -2,6 +2,8 @@
 
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
+from markupsafe import Markup
+from werkzeug.utils import secure_filename
 import pandas as pd
 
 # Import your local modules
@@ -32,6 +34,15 @@ except Exception:
 
 # Call it once early to load .env if present
 load_dotenv()
+
+# Optional CSRF protection (graceful if Flask-WTF not installed)
+try:
+    from flask_wtf import CSRFProtect  # type: ignore
+    from flask_wtf.csrf import generate_csrf  # type: ignore
+except Exception:
+    CSRFProtect = None  # type: ignore
+    def generate_csrf():  # type: ignore
+        return ""
 
 class CompanyProfile(db.Model):
     __tablename__ = 'company_profiles'
@@ -66,53 +77,7 @@ class UserProfile(db.Model):
 
 APPLICATIONS_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'applications.csv')
 
-def record_application(user_id, job_id, resume_filename):
-    """Append a new application to the applications.csv file."""
-    applied_at = datetime.utcnow().isoformat()
-    file_exists = os.path.isfile(APPLICATIONS_CSV)
-    with open(APPLICATIONS_CSV, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        if not file_exists:
-            writer.writerow(['user_id', 'job_id', 'resume_filename', 'applied_at'])
-        writer.writerow([user_id, job_id, resume_filename, applied_at])
-
-
-
-# ---------user section----------------
-def get_user_applications(user_id):
-    """Returns a set of job_ids the user has applied to."""
-    applied_jobs = set()
-    if os.path.isfile(APPLICATIONS_CSV):
-        with open(APPLICATIONS_CSV, 'r') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                if str(row['user_id']) == str(user_id):
-                    applied_jobs.add(int(row['job_id']))
-    return applied_jobs
-
-def get_applicants_for_job(job_id):
-    """Return a list of dicts for users who applied to job_id."""
-    applicants = []
-    if os.path.isfile(APPLICATIONS_CSV):
-        with open(APPLICATIONS_CSV, 'r') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                if int(row['job_id']) == int(job_id):
-                    applicants.append(row)
-    return applicants
-
-def get_applicants_for_jobs(job_ids):
-    found = []
-    if os.path.isfile(APPLICATIONS_CSV):
-        with open(APPLICATIONS_CSV, 'r') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                try:
-                    if int(row['job_id']) in job_ids:
-                        found.append(row)
-                except:
-                    continue
-    return found
+# (Top-level application helpers removed in favor of app-scoped variants)
 
 def create_app():
     """Create and configure an instance of the Flask application."""
@@ -159,9 +124,26 @@ def create_app():
             "current_path": request.path or "/",
         }
 
+    # CSRF token helper for templates (works even if Flask-WTF missing)
+    @app.context_processor
+    def inject_csrf_token():
+        def _csrf_token():
+            try:
+                tok = generate_csrf()
+            except Exception:
+                tok = ''
+            if tok:
+                return Markup(f'<input type="hidden" name="csrf_token" value="{tok}">')
+            return ''
+        return { 'csrf_token': _csrf_token }
+
     # ---------- Flask / DB config ----------
-    app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecret')
-    app.debug = True  # umair1
+    # Security and environment-driven config
+    app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret')
+    app.debug = os.getenv('FLASK_DEBUG', '0') == '1'
+    # Upload constraints
+    app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH_MB', '20')) * 1024 * 1024
+    app.config['ALLOWED_EXTENSIONS'] = {'pdf', 'doc', 'docx', 'txt'}
 
     db_path = os.path.join(data_dir, 'smarthire.db')  # single definitive DB path
     app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
@@ -169,6 +151,13 @@ def create_app():
 
     db.init_app(app)
     app.register_blueprint(auth_bp)
+
+    # Enable CSRF protection if Flask-WTF is available
+    if CSRFProtect:
+        try:
+            CSRFProtect(app)  # type: ignore
+        except Exception:
+            pass
 
     # ---------- Small helper route (no inline JS in template) ----------
     @app.route('/hr/screen_candidates_select', methods=['GET'])
@@ -372,17 +361,18 @@ def create_app():
         return ids
 
     def record_application(user_id, job_id, resume_filename):
-        """Append a new application row (idempotency left to caller)."""
+        """Append a new application row (standardized schema with applied_at)."""
         apps_csv = app.config['APPLICATIONS_CSV']
         file_exists = os.path.isfile(apps_csv)
         with open(apps_csv, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=['user_id', 'job_id', 'resume_filename'])
+            writer = csv.DictWriter(f, fieldnames=['user_id', 'job_id', 'resume_filename', 'applied_at'])
             if not file_exists:
                 writer.writeheader()
             writer.writerow({
                 'user_id': int(user_id),
                 'job_id': int(job_id),
-                'resume_filename': resume_filename
+                'resume_filename': resume_filename,
+                'applied_at': datetime.utcnow().isoformat()
             })
 
     # ---------- Routes ----------
@@ -445,7 +435,11 @@ def create_app():
                 # optional resume upload
                 file = request.files.get('resume_file')
                 if file and file.filename:
-                    filename = f"user_{uid}_{file.filename}"
+                    # basic extension check
+                    if not ('ALLOWED_EXTENSIONS' in app.config and file.filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']):
+                        flash("Unsupported file type. Allowed: pdf, doc, docx, txt.", "danger")
+                        return redirect(url_for('user_profile'))
+                    filename = f"user_{uid}_{secure_filename(file.filename)}"
                     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'resumes', filename)
                     file.save(path)
                     prof.resume_filename = filename
@@ -462,11 +456,11 @@ def create_app():
         @app.route('/jobs/<int:job_id>')
         def job_view(job_id):
             jobs = get_jobs()
-            if job_id >= len(jobs):
+            job = next((j for j in jobs if int(j.get('id', -1)) == int(job_id)), None)
+            if not job:
                 flash("Job not found.", "warning")
                 return redirect(url_for('user_dashboard'))
-            j = jobs[job_id]
-            return render_template('job_view.html', job=j, job_id=job_id)
+            return render_template('job_view.html', job=job, job_id=job_id)
 
 
         @app.route('/user/upload_resume', methods=['GET', 'POST'])
@@ -476,8 +470,11 @@ def create_app():
                 return redirect(url_for('auth.login'))
             if request.method == 'POST':
                 file = request.files.get('resume_file')
-                if file:
-                    filename = f"user_{session['user_id']}_{file.filename}"
+                if file and file.filename:
+                    if not ('ALLOWED_EXTENSIONS' in app.config and file.filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']):
+                        flash("Unsupported file type. Allowed: pdf, doc, docx, txt.", "danger")
+                        return redirect(url_for('upload_resume'))
+                    filename = f"user_{session['user_id']}_{secure_filename(file.filename)}"
                     path = os.path.join(resumes_dir, filename)
                     file.save(path)
                     entities = resume_parser.parse_resume_file(path)
@@ -1162,11 +1159,10 @@ def create_app():
                 return redirect(url_for('auth.login'))
 
             jobs = get_jobs()
-            if job_id >= len(jobs):
+            selected_job = next((j for j in jobs if int(j.get('id', -1)) == int(job_id)), None)
+            if not selected_job:
                 flash(f"Invalid job ID: {job_id}", "danger")
                 return redirect(url_for('hr_dashboard'))
-
-            selected_job = jobs[job_id]
             job_skills = str(selected_job.get('skills', '')).split(',') if pd.notna(selected_job.get('skills')) else []
             jd_info = {
                 'skills': job_skills,
@@ -1200,6 +1196,11 @@ def create_app():
                 return redirect(url_for('auth.login'))
             try:
                 normalize_posted_ids()
+                # Also rewrite posted.csv to canonical header
+                try:
+                    normalize_posted_csv()
+                except Exception:
+                    pass
                 flash('Posted jobs normalized successfully.', 'success')
             except Exception as e:
                 print('Error normalizing posted.csv:', e)
@@ -1317,6 +1318,34 @@ def create_app():
                 flash('Sufficient jobs already present. No seeding needed.', 'info')
             return redirect(url_for('user_dashboard'))
 
+        # Utility: normalize jobs.csv to canonical columns/header
+        def normalize_jobs_csv():
+            jobs = get_jobs()
+            jobs_csv = app.config['JOBS_CSV']
+            if not jobs:
+                return
+            cols = ['title', 'description', 'skills', 'deadline', 'apply_url', 'hr_id']
+            df = pd.DataFrame(jobs)[cols]
+            df.to_csv(jobs_csv, index=False)
+
+        @app.route('/admin/normalize_csvs')
+        def admin_normalize_csvs():
+            if 'user_id' not in session or session.get('role') != 'HR':
+                flash("Please log in as an HR user to access this page.", "warning")
+                return redirect(url_for('auth.login'))
+            try:
+                normalize_jobs_csv()
+                normalize_posted_ids()
+                try:
+                    normalize_posted_csv()
+                except Exception:
+                    pass
+                flash('CSV files normalized successfully.', 'success')
+            except Exception as e:
+                print('CSV normalization error:', e)
+                flash('Failed to normalize CSV files.', 'danger')
+            return redirect(url_for('hr_dashboard'))
+
         @app.route('/admin/warmup_embeddings')
         def admin_warmup_embeddings():
             if 'user_id' not in session or session.get('role') != 'HR':
@@ -1402,16 +1431,29 @@ def create_app():
 
             user_id = session['user_id']
             jobs = get_jobs()
-            if job_id >= len(jobs):
+            job = next((j for j in jobs if int(j.get('id', -1)) == int(job_id)), None)
+            if not job:
                 flash("Invalid job selected.", "danger")
                 return redirect(url_for('user_dashboard'))
 
-            # Find user's resume filename
+            # Find user's resume filename (prefer profile, else latest by mtime)
             user_resume_filename = None
-            for fname in os.listdir(resumes_dir):
-                if f"user_{user_id}_" in fname:
-                    user_resume_filename = fname
-                    break
+            try:
+                prof = UserProfile.query.filter_by(user_id=user_id).first()
+            except Exception:
+                prof = None
+            if prof and prof.resume_filename:
+                candidate = os.path.join(resumes_dir, prof.resume_filename)
+                if os.path.isfile(candidate):
+                    user_resume_filename = prof.resume_filename
+            if not user_resume_filename:
+                try:
+                    matches = [f for f in os.listdir(resumes_dir) if f.startswith(f"user_{user_id}_")]
+                    if matches:
+                        matches.sort(key=lambda fn: os.path.getmtime(os.path.join(resumes_dir, fn)), reverse=True)
+                        user_resume_filename = matches[0]
+                except Exception:
+                    user_resume_filename = None
 
             if not user_resume_filename:
                 flash("Please upload your resume first.", "danger")
@@ -1465,7 +1507,7 @@ def setup_database(app):
 if __name__ == '__main__':
     app = create_app()
     setup_database(app)
-    app.run(debug=True)
+    app.run(debug=app.debug)
 
 
         
